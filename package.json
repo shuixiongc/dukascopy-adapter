@@ -1,17 +1,16 @@
 {
   "name": "dukascopy-adapter",
   "version": "1.0.0",
-  "description": "Dukascopy图表OKX数据适配器",
+  "description": "Dukascopy chart adapter for OKX market data",
   "main": "api/index.js",
   "scripts": {
     "start": "node api/index.js"
   },
   "dependencies": {
-    "axios": "^0.27.2",
-    "express": "^4.18.1"
+    "express": "^4.18.2",
+    "axios": "^1.3.4"
   },
   "engines": {
-    "node": ">=14"
-  },
-  "license": "MIT"
+    "node": ">=14.0.0"
+  }
 }

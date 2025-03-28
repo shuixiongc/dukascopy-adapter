@@ -26,7 +26,14 @@ const periodMapping = {
 // 获取Binance历史K线数据
 async function getBinanceKlines(symbol, interval, limit = 500) {
   try {
-    const binanceSymbol = symbolMapping[symbol] || symbol.replace('/', '');
+    // 处理符号映射
+    let binanceSymbol = symbol.replace('/', '');
+    if (symbolMapping[symbol]) {
+      binanceSymbol = symbolMapping[symbol];
+    }
+    
+    console.log(`正在请求Binance数据: ${binanceSymbol}, ${interval}`);
+    
     const url = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol.toUpperCase()}&interval=${interval}&limit=${limit}`;
     
     const response = await axios.get(url);
@@ -49,66 +56,68 @@ async function getBinanceKlines(symbol, interval, limit = 500) {
 
 // 设置CORS头
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
   next();
-});
-
-// 处理预检请求
-app.options('*', (req, res) => {
-  res.status(200).end();
 });
 
 // 模拟Dukascopy API
 app.get('/index.php', async (req, res) => {
-  const path = req.query.path;
-  const callback = req.query.jsonp || 'callback';
-  
-  if (path === 'chart/json3') {
-    const instrument = req.query.instrument || 'BTC/USD';
-    const period = req.query.period || '60';
-    const binancePeriod = periodMapping[period] || '1h';
+  try {
+    const path = req.query.path || '';
+    const jsonpCallback = req.query.jsonp || 'callback';
     
-    // 缓存键
-    const cacheKey = `${instrument}-${binancePeriod}`;
-    
-    // 检查缓存是否过期（5分钟）
-    const now = Date.now();
-    if (!dataCache[cacheKey] || !dataCache[cacheKey].timestamp || (now - dataCache[cacheKey].timestamp > 5 * 60 * 1000)) {
-      console.log(`获取新数据: ${instrument}, ${binancePeriod}`);
-      const klines = await getBinanceKlines(instrument, binancePeriod);
-      dataCache[cacheKey] = {
-        data: klines,
-        timestamp: now
-      };
-    }
-    
-    // 返回JSONP格式
-    res.setHeader('Content-Type', 'application/javascript');
-    res.send(`${callback}(${JSON.stringify(dataCache[cacheKey].data)})`);
-  } else if (path === 'common/instruments') {
-    // 提供可用交易对列表
-    const instruments = [
-      { id: 'BTC/USD', name: '比特币/美元' },
-      { id: 'ETH/USD', name: '以太坊/美元' },
-      { id: 'XAU/USD', name: '黄金/美元' },
-      { id: 'EUR/USD', name: '欧元/美元' }
-    ];
-    
-    res.setHeader('Content-Type', 'application/javascript');
-    res.send(`${callback}(${JSON.stringify(instruments)})`);
-  } else {
-    // 处理其他API调用
-    res.setHeader('Content-Type', 'application/javascript');
-    res.send(`${callback}({})`);
-  }
-});
-
-// 健康检查端点
-app.get('/', (req, res) => {
-  res.send('Dukascopy适配器服务正在运行');
-});
-
-// 导出为Vercel无服务器函数
-module.exports = app;
+    if (path === 'chart/json3') {
+      let instrument = req.query.instrument || 'BTC/USD';
+      const period = req.query.period || '60';
+      const binancePeriod = periodMapping[period] || '1h';
+      
+      // 处理符号映射
+      if (instrument.includes('/')) {
+        // 确保格式正确
+        console.log(`处理交易对: ${instrument}`);
+      } else {
+        // 可能是直接传入的Binance符号
+        instrument = instrument.toUpperCase();
+        if (instrument.endsWith('USD')) {
+          instrument = instrument.slice(0, -3) + '/USD';
+        }
+        console.log(`格式化交易对: ${instrument}`);
+      }
+      
+      // 缓存键
+      const cacheKey = `${instrument}-${binancePeriod}`;
+      
+      // 检查缓存是否过期（2分钟）
+      const now = Date.now();
+      if (!dataCache[cacheKey] || !dataCache[cacheKey].timestamp || (now - dataCache[cacheKey].timestamp > 2 * 60 * 1000)) {
+        console.log(`获取新数据: ${instrument}, ${binancePeriod}`);
+        try {
+          const klines = await getBinanceKlines(instrument, binancePeriod);
+          if (klines && klines.length > 0) {
+            dataCache[cacheKey] = {
+              data: klines,
+              timestamp: now
+            };
+            console.log(`已更新数据: ${klines.length} 条K线`);
+          } else {
+            console.log(`未能获取数据，使用空数组`);
+            if (!dataCache[cacheKey]) {
+              dataCache[cacheKey] = { data: [], timestamp: now };
+            }
+          }
+        } catch (error) {
+          console.error(`获取数据出错: ${error.message}`);
+          if (!dataCache[cacheKey]) {
+            dataCache[cacheKey] = { data: [], timestamp: now };
+          }
+        }
+      }
+      
+      // 返回JSONP格式
+      const data = dataCache[cacheKey] ? dataCache[cacheKey].data : [];
+      res.set('Content-Type', 'application
